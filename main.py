@@ -1,12 +1,26 @@
-import groq
-import feedparser
-import schedule
+import os
 import time
 import requests
+import feedparser
+import schedule
 from datetime import datetime
+from flask import Flask
+from threading import Thread
+from groq import Groq
 
-# ─── CONFIG ─────────────────────────────────────────────────
-import os
+# ─── FLASK (keeps Render awake) ──────────────────────────────
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot is running!"
+
+def run_flask():
+    app.run(host='0.0.0.0', port=8080)
+
+Thread(target=run_flask, daemon=True).start()
+
+# ─── CONFIG ──────────────────────────────────────────────────
 GROQ_API_KEY       = os.environ.get("GROQ_API_KEY")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID")
@@ -41,29 +55,22 @@ def filter_by_topics(articles):
 
 # ─── SUMMARIZE WITH GROQ ─────────────────────────────────────
 def summarize_with_groq(articles):
-    client = groq.Groq(api_key=GROQ_API_KEY)
+    client = Groq(api_key=GROQ_API_KEY)
     news_text = "\n\n".join(articles[:15])
 
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         max_tokens=1000,
-        messages=[{
-            "role": "user",
-            "content": f"""You are a news digest assistant. Summarize these headlines into a digest:
-
-{news_text}
-
-Format:
-📰 NEWS DIGEST — {datetime.now().strftime('%d %b %Y, %I:%M %p')}
-
-Top Stories:
-- [2-3 sentence summary per key story]
-
-Quick Bites:
-- [1-line summaries for remaining items]
-
-Under 400 words."""
-        }]
+        messages=[
+            {
+                "role": "user",
+                "content": "You are a news digest assistant. Summarize these headlines into a digest:\n\n"
+                + news_text
+                + "\n\nFormat:\n"
+                + "NEWS DIGEST — " + datetime.now().strftime('%d %b %Y, %I:%M %p')
+                + "\n\nTop Stories:\n- [2-3 sentence summary per key story]\n\nQuick Bites:\n- [1-line summaries]\n\nUnder 400 words."
+            }
+        ]
     )
     return response.choices[0].message.content
 
@@ -80,10 +87,10 @@ def send_telegram(text):
 
 # ─── MAIN JOB ────────────────────────────────────────────────
 def run_digest():
-    print(f"\n⏰ Running at {datetime.now().strftime('%H:%M:%S')}...")
+    print(f"\nRunning at {datetime.now().strftime('%H:%M:%S')}...")
     articles = fetch_headlines()
     filtered = filter_by_topics(articles)
-    print(f"📥 {len(articles)} fetched, {len(filtered)} matched.")
+    print(f"Fetched {len(articles)} articles, {len(filtered)} matched.")
 
     if not filtered:
         print("No articles found.")
@@ -92,24 +99,14 @@ def run_digest():
     summary = summarize_with_groq(filtered)
     print("\n" + summary)
     send_telegram(summary)
-    print(f"✅ Sent! Next in {CHECK_INTERVAL_MINUTES} min.\n")
+    print(f"Sent! Next in {CHECK_INTERVAL_MINUTES} min.\n")
 
 # ─── START ───────────────────────────────────────────────────
-print("🚀 Bot started!")
-run_digest()  # run immediately
+print("Bot started!")
+run_digest()
 
 schedule.every(CHECK_INTERVAL_MINUTES).minutes.do(run_digest)
 
 while True:
     schedule.run_pending()
     time.sleep(60)
-```
-
----
-
-### `requirements.txt`
-```
-groq
-feedparser
-requests
-schedule
