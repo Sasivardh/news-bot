@@ -1,0 +1,5 @@
+groq
+feedparser
+requests
+schedule
+flask
