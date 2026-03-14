@@ -76,16 +76,6 @@ RSS_FEEDS = [
     "https://www.theverge.com/rss/index.xml",
 ]
 
-# Top Indian & global stocks to track
-STOCKS = {
-    "Reliance":  "RELIANCE.BSE",
-    "TCS":       "TCS.BSE",
-    "Infosys":   "INFY",
-    "HDFC Bank": "HDFCBANK.BSE",
-    "Nifty 50":  "NSEI",
-    "Sensex":    "BSESN",
-}
-
 TOPICS_TO_WATCH = ["AI", "machine learning", "Python", "India"]
 CHECK_INTERVAL_MINUTES = 30
 sent_articles = set()
@@ -182,6 +172,18 @@ def fetch_stocks():
             results[name] = {"price": "N/A", "change": "N/A", "pct": "N/A", "arrow": "➡️"}
 
     return results
+
+def format_stocks(stocks):
+    lines = ["💹 *STOCK PRICES*\n", "━━━━━━━━━━━━━━━━━━━━━━━\n"]
+    for name, data in stocks.items():
+        arrow  = data["arrow"]
+        price  = data["price"]
+        change = data["change"]
+        pct    = data["pct"]
+        lines.append(f"{arrow} *{name}*: ₹{price} ({change} | {pct}%)")
+    lines.append("\n━━━━━━━━━━━━━━━━━━━━━━━")
+    lines.append("🤖 _Live stock data_")
+    return "\n".join(lines)
 
 # ─── SUMMARIZE WITH GROQ ─────────────────────────────────────
 def summarize_with_groq(articles, cricket, stocks):
