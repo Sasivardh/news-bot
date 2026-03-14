@@ -1,0 +1,20 @@
+[phases.install]
+cmds = ["pip install groq feedparser requests schedule flask"]
+```
+4. Click **Commit changes** ✅
+
+---
+
+## Step 3 — Redeploy
+
+1. Go to Railway → your service
+2. Click **Deployments** tab
+3. Click **Redeploy** ✅
+
+---
+
+Watch the logs — should now show:
+```
+Successfully installed groq feedparser requests schedule flask ✅
+Bot started!
+Sent! Next in 30 min. ✅
