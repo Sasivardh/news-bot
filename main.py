@@ -71,15 +71,16 @@ TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID")
 CRICAPI_KEY        = os.environ.get("CRICAPI_KEY")
 
 RSS_FEEDS = [
+    # International
     "https://feeds.bbci.co.uk/news/rss.xml",
     "https://techcrunch.com/feed/",
     "https://www.theverge.com/rss/index.xml",
+    # Indian news
+    "https://timesofindia.indiatimes.com/rssfeedstopstories.cms",
+    "https://www.thehindu.com/feeder/default.rss",
+    "https://indianexpress.com/feed/",
+    "https://www.ndtv.com/rss/feeds",
 ]
-
-TOPICS_TO_WATCH = ["AI", "machine learning", "Python", "India"]
-CHECK_INTERVAL_MINUTES = 30
-sent_articles = set()
-
 # ─── FETCH NEWS ──────────────────────────────────────────────
 def fetch_headlines():
     articles = []
@@ -95,14 +96,18 @@ def fetch_headlines():
             print(f"Feed error: {url} — {e}")
     return articles
 
-def filter_by_topics(articles):
-    filtered = [a for a in articles
-                if any(kw.lower() in a.lower() for kw in TOPICS_TO_WATCH)
-                and a[:50] not in sent_articles]
-    for a in filtered:
-        sent_articles.add(a[:50])
-    return filtered or articles
-
+TOPICS_TO_WATCH = [
+    # Tech
+    "AI", "machine learning", "Python", "technology",
+    # India
+    "India", "Modi", "Andhra Pradesh", "Vijayawada",
+    # Business
+    "stock", "market", "economy", "startup",
+    # Cricket
+    "cricket", "IPL", "BCCI",
+    # World
+    "war", "election", "climate",
+]
 # ─── FETCH CRICKET ───────────────────────────────────────────
 def fetch_cricket():
     scores = []
