@@ -69,7 +69,6 @@ GROQ_API_KEY       = os.environ.get("GROQ_API_KEY")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID")
 CRICAPI_KEY        = os.environ.get("CRICAPI_KEY")
-ALPHA_VANTAGE_KEY  = os.environ.get("ALPHA_VANTAGE_KEY")
 
 RSS_FEEDS = [
     "https://feeds.bbci.co.uk/news/rss.xml",
