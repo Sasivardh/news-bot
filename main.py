@@ -104,9 +104,7 @@ def run_digest():
 # ─── START ───────────────────────────────────────────────────
 print("Bot started!")
 run_digest()
-
 schedule.every(CHECK_INTERVAL_MINUTES).minutes.do(run_digest)
-
 while True:
     schedule.run_pending()
     time.sleep(60)
