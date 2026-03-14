@@ -46,6 +46,13 @@ def webhook():
         send_telegram("📈 *Fetching latest stock prices...*")
         stocks = fetch_stocks()
         send_telegram(format_stocks(stocks))
+    elif text == "/cricket":
+        send_telegram("🏏 *Fetching live cricket scores...*")
+        cricket = fetch_cricket()
+        send_telegram(format_cricket(cricket))
+    elif text == "/movies":
+        send_telegram("🎬 *Fetching latest movie news...*")
+        Thread(target=send_movie_news).start()
     elif text == "/help":
         send_telegram(
             "🤖 *Available Commands:*\n\n"
@@ -54,6 +61,8 @@ def webhook():
             "/now — Get digest immediately\n"
             "/status — Check bot status\n"
             "/stocks — Get latest stock prices\n"
+            "/cricket — Get live cricket scores\n"
+            "/movies — Get latest movie news\n"
             "/help — Show this message"
         )
 
@@ -71,21 +80,60 @@ TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID")
 CRICAPI_KEY        = os.environ.get("CRICAPI_KEY")
 
 RSS_FEEDS = [
+    # International news
     "https://feeds.bbci.co.uk/news/rss.xml",
     "https://techcrunch.com/feed/",
     "https://www.theverge.com/rss/index.xml",
+    # Indian news
     "https://timesofindia.indiatimes.com/rssfeedstopstories.cms",
     "https://www.thehindu.com/feeder/default.rss",
     "https://indianexpress.com/feed/",
     "https://www.ndtv.com/rss/feeds",
+    # Bollywood & Indian cinema
+    "https://timesofindia.indiatimes.com/rss/4719148.cms",
+    "https://www.bollywoodhungama.com/rss/news.xml",
+    "https://feeds.feedburner.com/ndtvmovies",
+    # Hollywood & international entertainment
+    "https://variety.com/feed/",
+    "https://deadline.com/feed/",
+    "https://www.hollywoodreporter.com/feed/",
+    # Telugu cinema
+    "https://www.123telugu.com/feed",
+    "https://www.telugucinema.com/feed",
+]
+
+MOVIE_FEEDS = [
+    "https://variety.com/feed/",
+    "https://deadline.com/feed/",
+    "https://www.hollywoodreporter.com/feed/",
+    "https://www.bollywoodhungama.com/rss/news.xml",
+    "https://feeds.feedburner.com/ndtvmovies",
+    "https://www.123telugu.com/feed",
+    "https://www.telugucinema.com/feed",
 ]
 
 TOPICS_TO_WATCH = [
+    # Tech
     "AI", "machine learning", "Python", "technology",
+    # India
     "India", "Modi", "Andhra Pradesh", "Vijayawada",
+    # Business
     "stock", "market", "economy", "startup",
+    # Cricket
     "cricket", "IPL", "BCCI",
+    # World
     "war", "election", "climate",
+    # Bollywood
+    "Bollywood", "Shah Rukh Khan", "Salman Khan",
+    "Deepika", "Ranveer", "Alia Bhatt", "Ranbir",
+    "box office", "trailer", "release",
+    # Tollywood
+    "Tollywood", "Prabhas", "Allu Arjun", "NTR",
+    "Ram Charan", "Mahesh Babu", "Vijay Deverakonda",
+    "Samantha", "Rashmika", "Telugu movie",
+    # Hollywood
+    "Hollywood", "Marvel", "Netflix", "Disney",
+    "Oscar", "blockbuster", "sequel",
 ]
 
 CHECK_INTERVAL_MINUTES = 30
@@ -114,6 +162,52 @@ def filter_by_topics(articles):
         sent_articles.add(a[:50])
     return filtered or articles
 
+# ─── FETCH MOVIE NEWS ────────────────────────────────────────
+def fetch_movie_news():
+    movies = []
+    for url in MOVIE_FEEDS:
+        try:
+            feed = feedparser.parse(url)
+            for entry in feed.entries[:4]:
+                title   = entry.get("title", "")
+                summary = entry.get("summary", "")[:200]
+                link    = entry.get("link", "")
+                movies.append(f"• {title}\n  {summary}\n  {link}")
+        except Exception as e:
+            print(f"Movie feed error: {url} — {e}")
+    return movies
+
+def send_movie_news():
+    movies = fetch_movie_news()
+    if not movies:
+        send_telegram("❌ No movie news available right now.")
+        return
+    movie_text = "\n\n".join(movies[:10])
+    client = Groq(api_key=GROQ_API_KEY)
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        max_tokens=1500,
+        messages=[{
+            "role": "user",
+            "content": (
+                "Summarize these movie news articles into a fun Telegram digest:\n\n"
+                + movie_text
+                + "\n\nUse this format:\n\n"
+                "🎬 *MOVIE NEWS DIGEST* — " + datetime.now().strftime('%d %b %Y, %I:%M %p') + "\n\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                "🎭 *BOLLYWOOD*\n"
+                "• 🎬 *[Movie/Star]* — [1 line update]\n\n"
+                "🎭 *TOLLYWOOD*\n"
+                "• 🎬 *[Movie/Star]* — [1 line update]\n\n"
+                "🎭 *HOLLYWOOD*\n"
+                "• 🎬 *[Movie/Star]* — [1 line update]\n\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━\n"
+                "🤖 _Latest movie updates_"
+            )
+        }]
+    )
+    send_telegram(response.choices[0].message.content)
+
 # ─── FETCH CRICKET ───────────────────────────────────────────
 def fetch_cricket():
     scores = []
@@ -126,10 +220,11 @@ def fetch_cricket():
             print("Cricket API error:", data)
             return scores
 
-        for match in data.get("data", [])[:5]:
+        for match in data.get("data", [])[:10]:
             name   = match.get("name", "Unknown Match")
             status = match.get("status", "")
             score  = match.get("score", [])
+            matchType = match.get("matchType", "").upper()
 
             score_text = ""
             for s in score:
@@ -139,11 +234,34 @@ def fetch_cricket():
                 overs   = s.get("o", 0)
                 score_text += f"{inning}: {runs}/{wickets} ({overs} ov) | "
 
-            scores.append(f"• {name}\n  {status}\n  {score_text.rstrip(' | ')}")
+            scores.append({
+                "name":   name,
+                "status": status,
+                "score":  score_text.rstrip(" | "),
+                "type":   matchType
+            })
 
     except Exception as e:
         print(f"Cricket fetch error: {e}")
     return scores
+
+def format_cricket(scores):
+    if not scores:
+        return "🏏 No live cricket matches right now."
+
+    lines = [
+        "🏏 *LIVE CRICKET SCORES*\n",
+        "━━━━━━━━━━━━━━━━━━━━━━━\n"
+    ]
+    for match in scores:
+        lines.append(f"🏟 *{match['name']}* ({match['type']})")
+        if match["score"]:
+            lines.append(f"📊 {match['score']}")
+        lines.append(f"📌 {match['status']}")
+        lines.append("─────────────────────")
+
+    lines.append("\n🤖 _Live scores via CricAPI_")
+    return "\n".join(lines)
 
 # ─── FETCH STOCKS ────────────────────────────────────────────
 def fetch_stocks():
@@ -159,10 +277,10 @@ def fetch_stocks():
 
     for name, symbol in STOCKS.items():
         try:
-            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=1d&range=1d"
+            url     = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=1d&range=1d"
             headers = {"User-Agent": "Mozilla/5.0"}
-            r    = requests.get(url, headers=headers, timeout=10)
-            data = r.json()
+            r       = requests.get(url, headers=headers, timeout=10)
+            data    = r.json()
 
             meta   = data["chart"]["result"][0]["meta"]
             price  = round(meta.get("regularMarketPrice", 0), 2)
@@ -200,7 +318,7 @@ def format_stocks(stocks):
 def summarize_with_groq(articles, cricket, stocks):
     client = Groq(api_key=GROQ_API_KEY)
     news_text    = "\n\n".join(articles[:15])
-    cricket_text = "\n\n".join(cricket[:5]) if cricket else "No cricket matches currently."
+    cricket_text = format_cricket(cricket)
     stocks_text  = format_stocks(stocks)
 
     response = client.chat.completions.create(
@@ -230,9 +348,13 @@ def summarize_with_groq(articles, cricket, stocks):
                     "• 💡 *[Title]* — [1 line summary]\n"
                     "• 💡 *[Title]* — [1 line summary]\n\n"
                     "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                    "🏏 *CRICKET SCORES & UPDATES*\n\n"
-                    "• 🏏 *[Match Title]* — [score/status]\n"
-                    "• 🏏 *[Match Title]* — [score/status]\n\n"
+                    "🎬 *MOVIE NEWS*\n\n"
+                    "• 🎭 *[Movie/Star]* — [1 line update]\n"
+                    "• 🎭 *[Movie/Star]* — [1 line update]\n"
+                    "• 🎭 *[Movie/Star]* — [1 line update]\n\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    "🏏 *CRICKET SCORES*\n\n"
+                    + cricket_text + "\n\n"
                     "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
                     + stocks_text + "\n\n"
                     "━━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -240,7 +362,6 @@ def summarize_with_groq(articles, cricket, stocks):
                     "Use relevant emojis:\n"
                     "🌍 World, 💻 Tech, 💰 Business, ⚽ Sports, 🎬 Entertainment, 🔬 Science, 🏥 Health, 🇮🇳 India\n\n"
                     "News headlines:\n\n" + news_text
-                    + "\n\nCricket updates:\n\n" + cricket_text
                 )
             }
         ]
