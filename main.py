@@ -31,8 +31,14 @@ RSS_FEEDS = [
     "https://www.theverge.com/rss/index.xml",
 ]
 
+CRICKET_FEEDS = [
+    "https://www.cricbuzz.com/rss-feeds/matchschedule",
+    "https://timesofindia.indiatimes.com/rss/4719148.cms",  # TOI Cricket
+]
+
 TOPICS_TO_WATCH = ["AI", "machine learning", "Python", "India"]
 CHECK_INTERVAL_MINUTES = 30
+sent_articles = set()
 
 # ─── FETCH NEWS ──────────────────────────────────────────────
 def fetch_headlines():
@@ -50,13 +56,33 @@ def fetch_headlines():
     return articles
 
 def filter_by_topics(articles):
-    filtered = [a for a in articles if any(kw.lower() in a.lower() for kw in TOPICS_TO_WATCH)]
+    filtered = [a for a in articles
+                if any(kw.lower() in a.lower() for kw in TOPICS_TO_WATCH)
+                and a[:50] not in sent_articles]
+    for a in filtered:
+        sent_articles.add(a[:50])
     return filtered or articles
 
+# ─── FETCH CRICKET SCORES ────────────────────────────────────
+def fetch_cricket():
+    scores = []
+    for url in CRICKET_FEEDS:
+        try:
+            feed = feedparser.parse(url)
+            for entry in feed.entries[:5]:
+                title   = entry.get("title", "")
+                summary = entry.get("summary", "")[:200]
+                link    = entry.get("link", "")
+                scores.append(f"• {title}\n  {summary}\n  {link}")
+        except Exception as e:
+            print(f"Cricket feed error: {url} — {e}")
+    return scores
+
 # ─── SUMMARIZE WITH GROQ ─────────────────────────────────────
-def summarize_with_groq(articles):
+def summarize_with_groq(articles, cricket):
     client = Groq(api_key=GROQ_API_KEY)
-    news_text = "\n\n".join(articles[:15])
+    news_text    = "\n\n".join(articles[:15])
+    cricket_text = "\n\n".join(cricket[:5]) if cricket else "No cricket updates available."
 
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
@@ -83,14 +109,20 @@ def summarize_with_groq(articles):
                     "⚡ *QUICK BITES*\n\n"
                     "• 💡 *[Title]* — [1 line summary]\n"
                     "• 💡 *[Title]* — [1 line summary]\n"
-                    "• 💡 *[Title]* — [1 line summary]\n"
                     "• 💡 *[Title]* — [1 line summary]\n\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    "🏏 *CRICKET SCORES & UPDATES*\n\n"
+                    "• 🏏 *[Match Title]* — [1 line score/update]\n"
+                    "• 🏏 *[Match Title]* — [1 line score/update]\n"
+                    "• 🏏 *[Match Title]* — [1 line score/update]\n\n"
                     "━━━━━━━━━━━━━━━━━━━━━━━\n"
                     "🤖 _Auto-generated digest • Next update in 30 min_\n\n"
                     "Use relevant emojis for each story category:\n"
                     "🌍 World news, 💻 Tech, 💰 Business, ⚽ Sports, 🎬 Entertainment, 🔬 Science, 🏥 Health, 🇮🇳 India news\n\n"
-                    "Here are the headlines:\n\n"
+                    "Here are the news headlines:\n\n"
                     + news_text
+                    + "\n\nHere are the cricket updates:\n\n"
+                    + cricket_text
                 )
             }
         ]
@@ -114,13 +146,14 @@ def run_digest():
     print(f"\nRunning at {datetime.now().strftime('%H:%M:%S')}...")
     articles = fetch_headlines()
     filtered = filter_by_topics(articles)
-    print(f"Fetched {len(articles)} articles, {len(filtered)} matched.")
+    cricket  = fetch_cricket()
+    print(f"Fetched {len(articles)} articles, {len(filtered)} matched, {len(cricket)} cricket updates.")
 
-    if not filtered:
-        print("No articles found.")
+    if not filtered and not cricket:
+        print("No content found.")
         return
 
-    summary = summarize_with_groq(filtered)
+    summary = summarize_with_groq(filtered, cricket)
     print("\n" + summary)
     send_telegram(summary)
     print(f"Sent! Next in {CHECK_INTERVAL_MINUTES} min.\n")
