@@ -10,7 +10,7 @@ from groq import Groq
 
 # ─── FLASK ───────────────────────────────────────────────────
 app = Flask(__name__)
-bot_active = True  # global flag to start/stop digest
+bot_active = True
 
 @app.route('/')
 def home():
@@ -27,26 +27,25 @@ def webhook():
     text    = message.get("text", "").strip().lower()
     chat_id = str(message.get("chat", {}).get("id", ""))
 
-    # only respond to your chat
     if chat_id != TELEGRAM_CHAT_ID:
         return "ok"
 
     if text == "/start":
         bot_active = True
         send_telegram("✅ *Bot started!* You will receive digests every 30 min.")
-
     elif text == "/stop":
         bot_active = False
         send_telegram("⛔ *Bot stopped!* Send /start to resume.")
-
     elif text == "/now":
         send_telegram("⏳ *Fetching latest digest now...*")
         Thread(target=run_digest).start()
-
     elif text == "/status":
         status = "✅ Active" if bot_active else "⛔ Stopped"
         send_telegram(f"🤖 *Bot Status:* {status}\n⏰ Digest every 30 min")
-
+    elif text == "/stocks":
+        send_telegram("📈 *Fetching latest stock prices...*")
+        stocks = fetch_stocks()
+        send_telegram(format_stocks(stocks))
     elif text == "/help":
         send_telegram(
             "🤖 *Available Commands:*\n\n"
@@ -54,6 +53,7 @@ def webhook():
             "/stop — Stop receiving digests\n"
             "/now — Get digest immediately\n"
             "/status — Check bot status\n"
+            "/stocks — Get latest stock prices\n"
             "/help — Show this message"
         )
 
@@ -69,6 +69,7 @@ GROQ_API_KEY       = os.environ.get("GROQ_API_KEY")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID")
 CRICAPI_KEY        = os.environ.get("CRICAPI_KEY")
+ALPHA_VANTAGE_KEY  = os.environ.get("ALPHA_VANTAGE_KEY")
 
 RSS_FEEDS = [
     "https://feeds.bbci.co.uk/news/rss.xml",
@@ -76,9 +77,15 @@ RSS_FEEDS = [
     "https://www.theverge.com/rss/index.xml",
 ]
 
-CRICKET_FEEDS = [
-    "https://timesofindia.indiatimes.com/rss/4719148.cms",
-]
+# Top Indian & global stocks to track
+STOCKS = {
+    "Reliance":  "RELIANCE.BSE",
+    "TCS":       "TCS.BSE",
+    "Infosys":   "INFY",
+    "HDFC Bank": "HDFCBANK.BSE",
+    "Nifty 50":  "NSEI",
+    "Sensex":    "BSESN",
+}
 
 TOPICS_TO_WATCH = ["AI", "machine learning", "Python", "India"]
 CHECK_INTERVAL_MINUTES = 30
@@ -111,19 +118,18 @@ def filter_by_topics(articles):
 def fetch_cricket():
     scores = []
     try:
-        url = f"https://api.cricapi.com/v1/currentMatches?apikey={CRICAPI_KEY}&offset=0"
-        r = requests.get(url, timeout=10)
+        url  = f"https://api.cricapi.com/v1/currentMatches?apikey={CRICAPI_KEY}&offset=0"
+        r    = requests.get(url, timeout=10)
         data = r.json()
 
         if data.get("status") != "success":
             print("Cricket API error:", data)
             return scores
 
-        matches = data.get("data", [])[:5]
-        for match in matches:
-            name    = match.get("name", "Unknown Match")
-            status  = match.get("status", "")
-            score   = match.get("score", [])
+        for match in data.get("data", [])[:5]:
+            name   = match.get("name", "Unknown Match")
+            status = match.get("status", "")
+            score  = match.get("score", [])
 
             score_text = ""
             for s in score:
@@ -139,11 +145,61 @@ def fetch_cricket():
         print(f"Cricket fetch error: {e}")
     return scores
 
+# ─── FETCH STOCKS ────────────────────────────────────────────
+def fetch_stocks():
+    results = {}
+    for name, symbol in STOCKS.items():
+        try:
+            url = (
+                f"https://www.alphavantage.co/query"
+                f"?function=GLOBAL_QUOTE"
+                f"&symbol={symbol}"
+                f"&apikey={ALPHA_VANTAGE_KEY}"
+            )
+            r    = requests.get(url, timeout=10)
+            data = r.json().get("Global Quote", {})
+
+            price  = data.get("05. price", "N/A")
+            change = data.get("09. change", "N/A")
+            pct    = data.get("10. change percent", "N/A")
+
+            # pick emoji based on change direction
+            if change != "N/A":
+                arrow = "📈" if float(change) >= 0 else "📉"
+            else:
+                arrow = "➡️"
+
+            results[name] = {
+                "price":  price,
+                "change": change,
+                "pct":    pct,
+                "arrow":  arrow
+            }
+
+        except Exception as e:
+            print(f"Stock fetch error {name}: {e}")
+            results[name] = {"price": "N/A", "change": "N/A", "pct": "N/A", "arrow": "➡️"}
+
+    return results
+
+def format_stocks(stocks):
+    lines = ["💹 *STOCK PRICES*\n", "━━━━━━━━━━━━━━━━━━━━━━━\n"]
+    for name, data in stocks.items():
+        arrow  = data["arrow"]
+        price  = data["price"]
+        change = data["change"]
+        pct    = data["pct"]
+        lines.append(f"{arrow} *{name}*: ₹{price} ({change} | {pct})")
+    lines.append("\n━━━━━━━━━━━━━━━━━━━━━━━")
+    lines.append("🤖 _Live stock data_")
+    return "\n".join(lines)
+
 # ─── SUMMARIZE WITH GROQ ─────────────────────────────────────
-def summarize_with_groq(articles, cricket):
+def summarize_with_groq(articles, cricket, stocks):
     client = Groq(api_key=GROQ_API_KEY)
     news_text    = "\n\n".join(articles[:15])
     cricket_text = "\n\n".join(cricket[:5]) if cricket else "No cricket matches currently."
+    stocks_text  = format_stocks(stocks)
 
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
@@ -152,7 +208,7 @@ def summarize_with_groq(articles, cricket):
             {
                 "role": "user",
                 "content": (
-                    "You are a news digest assistant. Summarize these headlines into a beautifully formatted Telegram digest.\n\n"
+                    "You are a news digest assistant. Summarize into a beautifully formatted Telegram digest.\n\n"
                     "Use this EXACT format:\n\n"
                     "📰 *NEWS DIGEST* — " + datetime.now().strftime('%d %b %Y, %I:%M %p') + "\n\n"
                     "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
@@ -175,14 +231,14 @@ def summarize_with_groq(articles, cricket):
                     "🏏 *CRICKET SCORES & UPDATES*\n\n"
                     "• 🏏 *[Match Title]* — [score/status]\n"
                     "• 🏏 *[Match Title]* — [score/status]\n\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    + stocks_text + "\n\n"
                     "━━━━━━━━━━━━━━━━━━━━━━━\n"
                     "🤖 _Auto-generated digest • Next update in 30 min_\n\n"
-                    "Use relevant emojis for each story category:\n"
-                    "🌍 World news, 💻 Tech, 💰 Business, ⚽ Sports, 🎬 Entertainment, 🔬 Science, 🏥 Health, 🇮🇳 India news\n\n"
-                    "Here are the news headlines:\n\n"
-                    + news_text
-                    + "\n\nHere are the cricket updates:\n\n"
-                    + cricket_text
+                    "Use relevant emojis:\n"
+                    "🌍 World, 💻 Tech, 💰 Business, ⚽ Sports, 🎬 Entertainment, 🔬 Science, 🏥 Health, 🇮🇳 India\n\n"
+                    "News headlines:\n\n" + news_text
+                    + "\n\nCricket updates:\n\n" + cricket_text
                 )
             }
         ]
@@ -211,24 +267,23 @@ def run_digest():
     articles = fetch_headlines()
     filtered = filter_by_topics(articles)
     cricket  = fetch_cricket()
+    stocks   = fetch_stocks()
     print(f"Fetched {len(articles)} articles, {len(filtered)} matched, {len(cricket)} cricket updates.")
 
-    summary = summarize_with_groq(filtered, cricket)
+    summary = summarize_with_groq(filtered, cricket, stocks)
     print("\n" + summary)
     send_telegram(summary)
     print(f"Sent! Next in {CHECK_INTERVAL_MINUTES} min.\n")
 
-# ─── REGISTER TELEGRAM WEBHOOK ───────────────────────────────
+# ─── REGISTER WEBHOOK ────────────────────────────────────────
 def set_webhook():
-    # get your Railway URL from environment
     railway_url = os.environ.get("RAILWAY_URL", "")
     if not railway_url:
-        print("⚠️ RAILWAY_URL not set — webhook not registered")
+        print("RAILWAY_URL not set — webhook not registered")
         return
-    webhook_url = f"{railway_url}/webhook"
     r = requests.get(
         f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook",
-        params={"url": webhook_url}
+        params={"url": f"{railway_url}/webhook"}
     )
     print(f"Webhook set: {r.json()}")
 
