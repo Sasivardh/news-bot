@@ -8,7 +8,7 @@ from flask import Flask
 from threading import Thread
 from groq import Groq
 
-# ─── FLASK (keeps Render awake) ──────────────────────────────
+# ─── FLASK (keeps service awake) ─────────────────────────────
 app = Flask(__name__)
 
 @app.route('/')
@@ -60,15 +60,38 @@ def summarize_with_groq(articles):
 
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
-        max_tokens=1000,
+        max_tokens=2000,
         messages=[
             {
                 "role": "user",
-                "content": "You are a news digest assistant. Summarize these headlines into a digest:\n\n"
-                + news_text
-                + "\n\nFormat:\n"
-                + "NEWS DIGEST — " + datetime.now().strftime('%d %b %Y, %I:%M %p')
-                + "\n\nTop Stories:\n- [2-3 sentence summary per key story]\n\nQuick Bites:\n- [1-line summaries]\n\nUnder 400 words."
+                "content": (
+                    "You are a news digest assistant. Summarize these headlines into a beautifully formatted Telegram digest.\n\n"
+                    "Use this EXACT format:\n\n"
+                    "📰 *NEWS DIGEST* — " + datetime.now().strftime('%d %b %Y, %I:%M %p') + "\n\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    "🔥 *TOP STORIES*\n\n"
+                    "1️⃣ *[Headline Title]*\n"
+                    "📌 [2-3 sentence summary]\n"
+                    "🔗 [source link]\n\n"
+                    "2️⃣ *[Headline Title]*\n"
+                    "📌 [2-3 sentence summary]\n"
+                    "🔗 [source link]\n\n"
+                    "3️⃣ *[Headline Title]*\n"
+                    "📌 [2-3 sentence summary]\n"
+                    "🔗 [source link]\n\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    "⚡ *QUICK BITES*\n\n"
+                    "• 💡 *[Title]* — [1 line summary]\n"
+                    "• 💡 *[Title]* — [1 line summary]\n"
+                    "• 💡 *[Title]* — [1 line summary]\n"
+                    "• 💡 *[Title]* — [1 line summary]\n\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    "🤖 _Auto-generated digest • Next update in 30 min_\n\n"
+                    "Use relevant emojis for each story category:\n"
+                    "🌍 World news, 💻 Tech, 💰 Business, ⚽ Sports, 🎬 Entertainment, 🔬 Science, 🏥 Health, 🇮🇳 India news\n\n"
+                    "Here are the headlines:\n\n"
+                    + news_text
+                )
             }
         ]
     )
@@ -81,6 +104,7 @@ def send_telegram(text):
         r = requests.post(url, json={
             "chat_id": TELEGRAM_CHAT_ID,
             "text": text[i:i+4000],
+            "parse_mode": "Markdown"
         })
         if r.status_code != 200:
             print(f"Telegram error: {r.json()}")
@@ -104,7 +128,9 @@ def run_digest():
 # ─── START ───────────────────────────────────────────────────
 print("Bot started!")
 run_digest()
+
 schedule.every(CHECK_INTERVAL_MINUTES).minutes.do(run_digest)
+
 while True:
     schedule.run_pending()
     time.sleep(60)
