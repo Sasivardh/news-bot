@@ -148,26 +148,28 @@ def fetch_cricket():
 # ─── FETCH STOCKS ────────────────────────────────────────────
 def fetch_stocks():
     results = {}
+    STOCKS = {
+        "Nifty 50":  "^NSEI",
+        "Sensex":    "^BSESN",
+        "Reliance":  "RELIANCE.NS",
+        "TCS":       "TCS.NS",
+        "Infosys":   "INFY.NS",
+        "HDFC Bank": "HDFCBANK.NS",
+    }
+
     for name, symbol in STOCKS.items():
         try:
-            url = (
-                f"https://www.alphavantage.co/query"
-                f"?function=GLOBAL_QUOTE"
-                f"&symbol={symbol}"
-                f"&apikey={ALPHA_VANTAGE_KEY}"
-            )
-            r    = requests.get(url, timeout=10)
-            data = r.json().get("Global Quote", {})
+            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=1d&range=1d"
+            headers = {"User-Agent": "Mozilla/5.0"}
+            r    = requests.get(url, headers=headers, timeout=10)
+            data = r.json()
 
-            price  = data.get("05. price", "N/A")
-            change = data.get("09. change", "N/A")
-            pct    = data.get("10. change percent", "N/A")
-
-            # pick emoji based on change direction
-            if change != "N/A":
-                arrow = "📈" if float(change) >= 0 else "📉"
-            else:
-                arrow = "➡️"
+            meta   = data["chart"]["result"][0]["meta"]
+            price  = round(meta.get("regularMarketPrice", 0), 2)
+            prev   = round(meta.get("chartPreviousClose", 0), 2)
+            change = round(price - prev, 2)
+            pct    = round((change / prev) * 100, 2) if prev else 0
+            arrow  = "📈" if change >= 0 else "📉"
 
             results[name] = {
                 "price":  price,
@@ -181,18 +183,6 @@ def fetch_stocks():
             results[name] = {"price": "N/A", "change": "N/A", "pct": "N/A", "arrow": "➡️"}
 
     return results
-
-def format_stocks(stocks):
-    lines = ["💹 *STOCK PRICES*\n", "━━━━━━━━━━━━━━━━━━━━━━━\n"]
-    for name, data in stocks.items():
-        arrow  = data["arrow"]
-        price  = data["price"]
-        change = data["change"]
-        pct    = data["pct"]
-        lines.append(f"{arrow} *{name}*: ₹{price} ({change} | {pct})")
-    lines.append("\n━━━━━━━━━━━━━━━━━━━━━━━")
-    lines.append("🤖 _Live stock data_")
-    return "\n".join(lines)
 
 # ─── SUMMARIZE WITH GROQ ─────────────────────────────────────
 def summarize_with_groq(articles, cricket, stocks):
