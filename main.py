@@ -24,6 +24,7 @@ Thread(target=run_flask, daemon=True).start()
 GROQ_API_KEY       = os.environ.get("GROQ_API_KEY")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID")
+CRICAPI_KEY = os.environ.get("CRICAPI_KEY")
 
 RSS_FEEDS = [
     "https://feeds.bbci.co.uk/news/rss.xml",
@@ -64,20 +65,38 @@ def filter_by_topics(articles):
     return filtered or articles
 
 # ─── FETCH CRICKET SCORES ────────────────────────────────────
+
 def fetch_cricket():
     scores = []
-    for url in CRICKET_FEEDS:
-        try:
-            feed = feedparser.parse(url)
-            for entry in feed.entries[:5]:
-                title   = entry.get("title", "")
-                summary = entry.get("summary", "")[:200]
-                link    = entry.get("link", "")
-                scores.append(f"• {title}\n  {summary}\n  {link}")
-        except Exception as e:
-            print(f"Cricket feed error: {url} — {e}")
-    return scores
+    try:
+        api_key = os.environ.get("CRICAPI_KEY")
+        url = f"https://api.cricapi.com/v1/currentMatches?apikey={api_key}&offset=0"
+        r = requests.get(url, timeout=10)
+        data = r.json()
 
+        if data.get("status") != "success":
+            print("Cricket API error:", data)
+            return scores
+
+        matches = data.get("data", [])[:5]
+        for match in matches:
+            name    = match.get("name", "Unknown Match")
+            status  = match.get("status", "")
+            score   = match.get("score", [])
+
+            score_text = ""
+            for s in score:
+                inning = s.get("inning", "")
+                runs   = s.get("r", 0)
+                wickets = s.get("w", 0)
+                overs  = s.get("o", 0)
+                score_text += f"{inning}: {runs}/{wickets} ({overs} ov) | "
+
+            scores.append(f"• {name}\n  {status}\n  {score_text.rstrip(' | ')}")
+
+    except Exception as e:
+        print(f"Cricket fetch error: {e}")
+    return scores
 # ─── SUMMARIZE WITH GROQ ─────────────────────────────────────
 def summarize_with_groq(articles, cricket):
     client = Groq(api_key=GROQ_API_KEY)
