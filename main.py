@@ -417,6 +417,13 @@ run_digest()
 
 schedule.every(CHECK_INTERVAL_MINUTES).minutes.do(run_digest)
 
-while True:
-    schedule.run_pending()
-    time.sleep(60)
+def run_schedule():
+    while True:
+        schedule.run_pending()
+        time.sleep(60)
+
+# run scheduler in background thread
+Thread(target=run_schedule, daemon=True).start()
+
+# keep flask alive in main thread
+app.run(host='0.0.0.0', port=8080)
