@@ -32,7 +32,7 @@ def webhook():
 
     if text == "/start":
         bot_active = True
-        send_telegram("✅ *Bot started!* You will receive digests every 30 min.")
+        send_telegram("✅ *Bot started!* You will receive digests every 60 min.")
     elif text == "/stop":
         bot_active = False
         send_telegram("⛔ *Bot stopped!* Send /start to resume.")
@@ -41,7 +41,7 @@ def webhook():
         Thread(target=run_digest).start()
     elif text == "/status":
         status = "✅ Active" if bot_active else "⛔ Stopped"
-        send_telegram(f"🤖 *Bot Status:* {status}\n⏰ Digest every 30 min")
+        send_telegram(f"🤖 *Bot Status:* {status}\n⏰ Digest every 60 min")
     elif text == "/stocks":
         send_telegram("📈 *Fetching latest stock prices...*")
         stocks = fetch_stocks()
@@ -71,8 +71,6 @@ def webhook():
 def run_flask():
     app.run(host='0.0.0.0', port=8080)
 
-Thread(target=run_flask, daemon=True).start()
-
 # ─── CONFIG ──────────────────────────────────────────────────
 GROQ_API_KEY       = os.environ.get("GROQ_API_KEY")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -80,24 +78,19 @@ TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID")
 CRICAPI_KEY        = os.environ.get("CRICAPI_KEY")
 
 RSS_FEEDS = [
-    # International news
     "https://feeds.bbci.co.uk/news/rss.xml",
     "https://techcrunch.com/feed/",
     "https://www.theverge.com/rss/index.xml",
-    # Indian news
     "https://timesofindia.indiatimes.com/rssfeedstopstories.cms",
     "https://www.thehindu.com/feeder/default.rss",
     "https://indianexpress.com/feed/",
     "https://www.ndtv.com/rss/feeds",
-    # Bollywood & Indian cinema
     "https://timesofindia.indiatimes.com/rss/4719148.cms",
     "https://www.bollywoodhungama.com/rss/news.xml",
     "https://feeds.feedburner.com/ndtvmovies",
-    # Hollywood & international entertainment
     "https://variety.com/feed/",
     "https://deadline.com/feed/",
     "https://www.hollywoodreporter.com/feed/",
-    # Telugu cinema
     "https://www.123telugu.com/feed",
     "https://www.telugucinema.com/feed",
 ]
@@ -113,30 +106,22 @@ MOVIE_FEEDS = [
 ]
 
 TOPICS_TO_WATCH = [
-    # Tech
     "AI", "machine learning", "Python", "technology",
-    # India
     "India", "Modi", "Andhra Pradesh", "Vijayawada",
-    # Business
     "stock", "market", "economy", "startup",
-    # Cricket
     "cricket", "IPL", "BCCI",
-    # World
     "war", "election", "climate",
-    # Bollywood
     "Bollywood", "Shah Rukh Khan", "Salman Khan",
     "Deepika", "Ranveer", "Alia Bhatt", "Ranbir",
     "box office", "trailer", "release",
-    # Tollywood
     "Tollywood", "Prabhas", "Allu Arjun", "NTR",
     "Ram Charan", "Mahesh Babu", "Vijay Deverakonda",
     "Samantha", "Rashmika", "Telugu movie",
-    # Hollywood
     "Hollywood", "Marvel", "Netflix", "Disney",
     "Oscar", "blockbuster", "sequel",
 ]
 
-CHECK_INTERVAL_MINUTES = 30
+CHECK_INTERVAL_MINUTES = 60  # changed from 30 to 60
 sent_articles = set()
 
 # ─── FETCH NEWS ──────────────────────────────────────────────
@@ -145,9 +130,9 @@ def fetch_headlines():
     for url in RSS_FEEDS:
         try:
             feed = feedparser.parse(url)
-            for entry in feed.entries[:5]:
+            for entry in feed.entries[:3]:  # reduced from 5 to 3
                 title   = entry.get("title", "")
-                summary = entry.get("summary", "")[:300]
+                summary = entry.get("summary", "")[:200]  # reduced from 300
                 link    = entry.get("link", "")
                 articles.append(f"• {title}\n  {summary}\n  {link}")
         except Exception as e:
@@ -168,9 +153,9 @@ def fetch_movie_news():
     for url in MOVIE_FEEDS:
         try:
             feed = feedparser.parse(url)
-            for entry in feed.entries[:4]:
+            for entry in feed.entries[:3]:
                 title   = entry.get("title", "")
-                summary = entry.get("summary", "")[:200]
+                summary = entry.get("summary", "")[:150]
                 link    = entry.get("link", "")
                 movies.append(f"• {title}\n  {summary}\n  {link}")
         except Exception as e:
@@ -182,31 +167,43 @@ def send_movie_news():
     if not movies:
         send_telegram("❌ No movie news available right now.")
         return
-    movie_text = "\n\n".join(movies[:10])
+    movie_text = "\n\n".join(movies[:8])
     client = Groq(api_key=GROQ_API_KEY)
-    response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        max_tokens=1500,
-        messages=[{
-            "role": "user",
-            "content": (
-                "Summarize these movie news articles into a fun Telegram digest:\n\n"
-                + movie_text
-                + "\n\nUse this format:\n\n"
-                "🎬 *MOVIE NEWS DIGEST* — " + datetime.now().strftime('%d %b %Y, %I:%M %p') + "\n\n"
-                "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                "🎭 *BOLLYWOOD*\n"
-                "• 🎬 *[Movie/Star]* — [1 line update]\n\n"
-                "🎭 *TOLLYWOOD*\n"
-                "• 🎬 *[Movie/Star]* — [1 line update]\n\n"
-                "🎭 *HOLLYWOOD*\n"
-                "• 🎬 *[Movie/Star]* — [1 line update]\n\n"
-                "━━━━━━━━━━━━━━━━━━━━━━━\n"
-                "🤖 _Latest movie updates_"
+
+    for attempt in range(3):
+        try:
+            response = client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                max_tokens=800,
+                messages=[{
+                    "role": "user",
+                    "content": (
+                        "Summarize these movie news into a short Telegram digest:\n\n"
+                        + movie_text
+                        + "\n\nFormat:\n"
+                        "🎬 *MOVIE NEWS* — " + datetime.now().strftime('%d %b %Y, %I:%M %p') + "\n\n"
+                        "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                        "🎭 *BOLLYWOOD*\n"
+                        "• 🎬 *[Movie/Star]* — [1 line]\n\n"
+                        "🎭 *TOLLYWOOD*\n"
+                        "• 🎬 *[Movie/Star]* — [1 line]\n\n"
+                        "🎭 *HOLLYWOOD*\n"
+                        "• 🎬 *[Movie/Star]* — [1 line]\n\n"
+                        "━━━━━━━━━━━━━━━━━━━━━━━\n"
+                        "🤖 _Latest movie updates_"
+                    )
+                }]
             )
-        }]
-    )
-    send_telegram(response.choices[0].message.content)
+            send_telegram(response.choices[0].message.content)
+            return
+        except Exception as e:
+            if "429" in str(e):
+                wait = (attempt + 1) * 20
+                print(f"Rate limit — waiting {wait}s...")
+                time.sleep(wait)
+            else:
+                send_telegram("⚠️ Movie news unavailable right now.")
+                return
 
 # ─── FETCH CRICKET ───────────────────────────────────────────
 def fetch_cricket():
@@ -217,13 +214,12 @@ def fetch_cricket():
         data = r.json()
 
         if data.get("status") != "success":
-            print("Cricket API error:", data)
             return scores
 
         for match in data.get("data", [])[:10]:
-            name   = match.get("name", "Unknown Match")
-            status = match.get("status", "")
-            score  = match.get("score", [])
+            name      = match.get("name", "Unknown Match")
+            status    = match.get("status", "")
+            score     = match.get("score", [])
             matchType = match.get("matchType", "").upper()
 
             score_text = ""
@@ -249,10 +245,7 @@ def format_cricket(scores):
     if not scores:
         return "🏏 No live cricket matches right now."
 
-    lines = [
-        "🏏 *LIVE CRICKET SCORES*\n",
-        "━━━━━━━━━━━━━━━━━━━━━━━\n"
-    ]
+    lines = ["🏏 *LIVE CRICKET SCORES*\n", "━━━━━━━━━━━━━━━━━━━━━━━\n"]
     for match in scores:
         lines.append(f"🏟 *{match['name']}* ({match['type']})")
         if match["score"]:
@@ -305,11 +298,7 @@ def fetch_stocks():
 def format_stocks(stocks):
     lines = ["💹 *STOCK PRICES*\n", "━━━━━━━━━━━━━━━━━━━━━━━\n"]
     for name, data in stocks.items():
-        arrow  = data["arrow"]
-        price  = data["price"]
-        change = data["change"]
-        pct    = data["pct"]
-        lines.append(f"{arrow} *{name}*: ₹{price} ({change} | {pct}%)")
+        lines.append(f"{data['arrow']} *{name}*: ₹{data['price']} ({data['change']} | {data['pct']}%)")
     lines.append("\n━━━━━━━━━━━━━━━━━━━━━━━")
     lines.append("🤖 _Live stock data_")
     return "\n".join(lines)
@@ -317,56 +306,57 @@ def format_stocks(stocks):
 # ─── SUMMARIZE WITH GROQ ─────────────────────────────────────
 def summarize_with_groq(articles, cricket, stocks):
     client = Groq(api_key=GROQ_API_KEY)
-    news_text    = "\n\n".join(articles[:15])
+    news_text    = "\n\n".join(articles[:10])  # reduced from 15
     cricket_text = format_cricket(cricket)
     stocks_text  = format_stocks(stocks)
 
-    response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        max_tokens=2000,
-        messages=[
-            {
-                "role": "user",
-                "content": (
-                    "You are a news digest assistant. Summarize into a beautifully formatted Telegram digest.\n\n"
-                    "Use this EXACT format:\n\n"
-                    "📰 *NEWS DIGEST* — " + datetime.now().strftime('%d %b %Y, %I:%M %p') + "\n\n"
-                    "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                    "🔥 *TOP STORIES*\n\n"
-                    "1️⃣ *[Headline Title]*\n"
-                    "📌 [2-3 sentence summary]\n"
-                    "🔗 [source link]\n\n"
-                    "2️⃣ *[Headline Title]*\n"
-                    "📌 [2-3 sentence summary]\n"
-                    "🔗 [source link]\n\n"
-                    "3️⃣ *[Headline Title]*\n"
-                    "📌 [2-3 sentence summary]\n"
-                    "🔗 [source link]\n\n"
-                    "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                    "⚡ *QUICK BITES*\n\n"
-                    "• 💡 *[Title]* — [1 line summary]\n"
-                    "• 💡 *[Title]* — [1 line summary]\n"
-                    "• 💡 *[Title]* — [1 line summary]\n\n"
-                    "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                    "🎬 *MOVIE NEWS*\n\n"
-                    "• 🎭 *[Movie/Star]* — [1 line update]\n"
-                    "• 🎭 *[Movie/Star]* — [1 line update]\n"
-                    "• 🎭 *[Movie/Star]* — [1 line update]\n\n"
-                    "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                    "🏏 *CRICKET SCORES*\n\n"
-                    + cricket_text + "\n\n"
-                    "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                    + stocks_text + "\n\n"
-                    "━━━━━━━━━━━━━━━━━━━━━━━\n"
-                    "🤖 _Auto-generated digest • Next update in 30 min_\n\n"
-                    "Use relevant emojis:\n"
-                    "🌍 World, 💻 Tech, 💰 Business, ⚽ Sports, 🎬 Entertainment, 🔬 Science, 🏥 Health, 🇮🇳 India\n\n"
-                    "News headlines:\n\n" + news_text
-                )
-            }
-        ]
-    )
-    return response.choices[0].message.content
+    for attempt in range(3):
+        try:
+            response = client.chat.completions.create(
+                model="llama-3.1-8b-instant",  # faster & uses fewer tokens
+                max_tokens=800,                 # reduced from 2000
+                messages=[
+                    {
+                        "role": "user",
+                        "content": (
+                            "Summarize these headlines into a short Telegram digest.\n\n"
+                            "Format:\n"
+                            "📰 *NEWS DIGEST* — " + datetime.now().strftime('%d %b %Y, %I:%M %p') + "\n\n"
+                            "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                            "🔥 *TOP STORIES*\n"
+                            "1️⃣ *[Title]* — [1-2 sentence summary]\n"
+                            "2️⃣ *[Title]* — [1-2 sentence summary]\n"
+                            "3️⃣ *[Title]* — [1-2 sentence summary]\n\n"
+                            "⚡ *QUICK BITES*\n"
+                            "• 💡 *[Title]* — [1 line]\n"
+                            "• 💡 *[Title]* — [1 line]\n\n"
+                            "🎬 *MOVIE NEWS*\n"
+                            "• 🎭 *[Title]* — [1 line]\n"
+                            "• 🎭 *[Title]* — [1 line]\n\n"
+                            "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                            "🏏 *CRICKET*\n"
+                            + cricket_text + "\n\n"
+                            "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                            + stocks_text + "\n\n"
+                            "━━━━━━━━━━━━━━━━━━━━━━━\n"
+                            "🤖 _Auto digest • Next update in 60 min_\n\n"
+                            "Headlines:\n\n" + news_text
+                        )
+                    }
+                ]
+            )
+            return response.choices[0].message.content
+
+        except Exception as e:
+            if "429" in str(e):
+                wait = (attempt + 1) * 20
+                print(f"Rate limit — waiting {wait}s...")
+                time.sleep(wait)
+            else:
+                print(f"Groq error: {e}")
+                return "⚠️ Digest unavailable right now. Try /now later."
+
+    return "⚠️ Rate limit reached. Try again in a few minutes."
 
 # ─── SEND TO TELEGRAM ────────────────────────────────────────
 def send_telegram(text):
@@ -383,7 +373,7 @@ def send_telegram(text):
 # ─── MAIN JOB ────────────────────────────────────────────────
 def run_digest():
     if not bot_active:
-        print("Bot is stopped. Skipping digest.")
+        print("Bot stopped. Skipping.")
         return
 
     print(f"\nRunning at {datetime.now().strftime('%H:%M:%S')}...")
@@ -391,7 +381,7 @@ def run_digest():
     filtered = filter_by_topics(articles)
     cricket  = fetch_cricket()
     stocks   = fetch_stocks()
-    print(f"Fetched {len(articles)} articles, {len(filtered)} matched, {len(cricket)} cricket updates.")
+    print(f"Fetched {len(articles)} articles, {len(filtered)} matched, {len(cricket)} cricket.")
 
     summary = summarize_with_groq(filtered, cricket, stocks)
     print("\n" + summary)
@@ -400,13 +390,13 @@ def run_digest():
 
 # ─── REGISTER WEBHOOK ────────────────────────────────────────
 def set_webhook():
-    railway_url = os.environ.get("RAILWAY_URL", "")
-    if not railway_url:
-        print("RAILWAY_URL not set — webhook not registered")
+    render_url = os.environ.get("RAILWAY_URL", "")
+    if not render_url:
+        print("URL not set — webhook not registered")
         return
     r = requests.get(
         f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook",
-        params={"url": f"{railway_url}/webhook"}
+        params={"url": f"{render_url}/webhook"}
     )
     print(f"Webhook set: {r.json()}")
 
@@ -422,8 +412,5 @@ def run_schedule():
         schedule.run_pending()
         time.sleep(60)
 
-# run scheduler in background thread
 Thread(target=run_schedule, daemon=True).start()
-
-# keep flask alive in main thread
 app.run(host='0.0.0.0', port=8080)
