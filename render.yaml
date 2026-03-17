@@ -1,6 +1,22 @@
-services:
-  - type: worker
+  services:
+  - type: web
     name: news-bot
     runtime: python
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install groq feedparser requests schedule flask
     startCommand: python main.py
+```
+
+---
+
+## Step 4 — Commit and redeploy
+
+1. Update `main.py` and `render.yaml` on GitHub
+2. Go to Render → **Manual Deploy** ✅
+
+---
+
+## How it works after this fix
+```
+UptimeRobot pings every 5 min  →  Render never sleeps
+Flask runs in main thread      →  keeps service alive
+Scheduler runs in background   →  sends digest every 30 min
